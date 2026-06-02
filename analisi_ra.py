@@ -90,6 +90,11 @@ def process_file(filepath):
     print(pd.DataFrame(results).to_string(index=False))
     print()
 
+print("""
+EsferaPowerToys-Analisi-RA
+v1.0.0
+""")
+
 if not FILES:
     print(f"No s'han trobat fitxers .xlsx a '{INPUT_DIR}'")
 else:

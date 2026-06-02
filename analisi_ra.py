@@ -42,9 +42,9 @@ def process_file(filepath):
         aprovats = sum(is_approved(row[c]) for c in ra_cols)
         results.append({
             "ID Alumne": student_id,
-            "Nom": student_name,
-            "RA Avaluats": evaluats,
+            "Nom": student_name,            
             "RA Aprovats": aprovats,
+            "RA Avaluats": evaluats,
         })
 
     filename = os.path.basename(filepath)
@@ -63,7 +63,7 @@ def process_file(filepath):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     alt_fill = PatternFill("solid", start_color="EBF0F7")
 
-    headers = ["ID Alumne", "Nom", "RA Avaluats", "RA Aprovats"]
+    headers = ["ID Alumne", "Nom", "RA Aprovats", "RA Avaluats"]
     col_widths = [12, 30, 16, 16]
 
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):

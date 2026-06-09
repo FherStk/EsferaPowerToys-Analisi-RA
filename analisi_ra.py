@@ -6,7 +6,8 @@ import shutil, glob, os
 
 INPUT_DIR = "input/"
 OUTPUT_DIR = "output/"
-SHEET_NAME = "Resum RA"
+SHEET_NAME = "Estadístiques alumnes (RA)"
+STATS_SHEET_NAME = "Estadístiques grup (MP)"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 FILES = glob.glob(os.path.join(INPUT_DIR, "*.xlsx"))
@@ -30,6 +31,78 @@ def is_approved(val):
     except (ValueError, TypeError):
         return False
 
+def get_mp_stats(df, ra_cols):
+    mp_codes = sorted(set(c.split("_")[0] for c in ra_cols))
+    mp_ra = {mp: [c for c in ra_cols if c.split("_")[0] == mp] for mp in mp_codes}
+    stats = {mp: {"aproven": 0, "suspenen": 0} for mp in mp_codes}
+    for _, row in df.iterrows():
+        for mp, cols in mp_ra.items():
+            evaluated = [c for c in cols if is_evaluated(row[c])]
+            if not evaluated:
+                continue
+            if all(is_approved(row[c]) for c in evaluated):
+                stats[mp]["aproven"] += 1
+            else:
+                stats[mp]["suspenen"] += 1
+    return stats
+
+
+def write_stats_sheet(wb, mp_stats):
+    if STATS_SHEET_NAME in wb.sheetnames:
+        del wb[STATS_SHEET_NAME]
+    ws = wb.create_sheet(STATS_SHEET_NAME)
+
+    header_font = Font(name="Arial", bold=True, color="FFFFFF")
+    label_font = Font(name="Arial", bold=True)
+    data_font = Font(name="Arial")
+    header_fill = PatternFill("solid", start_color="2E4057")
+    suspenen_fill = PatternFill("solid", start_color="F4CCCC")
+    aproven_fill = PatternFill("solid", start_color="D9EAD3")
+    center = Alignment(horizontal="center", vertical="center")
+    thin = Side(style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    mp_codes = sorted(mp_stats.keys())
+
+    # Row 1: headers
+    ws.cell(row=1, column=1, value="").border = border
+    ws.column_dimensions["A"].width = 12
+    for col_idx, mp in enumerate(mp_codes, start=2):
+        cell = ws.cell(row=1, column=col_idx, value=mp)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center
+        cell.border = border
+        ws.column_dimensions[get_column_letter(col_idx)].width = 10
+    ws.row_dimensions[1].height = 22
+
+    # Row 2: Suspenen
+    cell = ws.cell(row=2, column=1, value="Suspenen")
+    cell.font = label_font
+    cell.fill = suspenen_fill
+    cell.alignment = center
+    cell.border = border
+    for col_idx, mp in enumerate(mp_codes, start=2):
+        cell = ws.cell(row=2, column=col_idx, value=mp_stats[mp]["suspenen"])
+        cell.font = data_font
+        cell.fill = suspenen_fill
+        cell.alignment = center
+        cell.border = border
+
+    # Row 3: Aproven
+    cell = ws.cell(row=3, column=1, value="Aproven")
+    cell.font = label_font
+    cell.fill = aproven_fill
+    cell.alignment = center
+    cell.border = border
+    for col_idx, mp in enumerate(mp_codes, start=2):
+        cell = ws.cell(row=3, column=col_idx, value=mp_stats[mp]["aproven"])
+        cell.font = data_font
+        cell.fill = aproven_fill
+        cell.alignment = center
+        cell.border = border
+
+
 def process_file(filepath):
     df = pd.read_excel(filepath, header=1, keep_default_na=False, na_values=[""])
     ra_cols = [c for c in df.columns if str(c).endswith("RA")]
@@ -52,6 +125,8 @@ def process_file(filepath):
     shutil.copy(filepath, outpath)
 
     wb = load_workbook(outpath)
+    mp_stats = get_mp_stats(df, ra_cols)
+    write_stats_sheet(wb, mp_stats)
     if SHEET_NAME in wb.sheetnames:
         del wb[SHEET_NAME]
     ws = wb.create_sheet(SHEET_NAME)
@@ -86,18 +161,15 @@ def process_file(filepath):
             cell.font = Font(name="Arial")
 
     wb.save(outpath)
-    print(f"Fitxer guardat: {outpath}")
-    print(pd.DataFrame(results).to_string(index=False))
-    print()
 
 print("""
 EsferaPowerToys-Analisi-RA
-v1.0.0
+v1.1.0
 """)
 
 if not FILES:
     print(f"No s'han trobat fitxers .xlsx a '{INPUT_DIR}'")
 else:
     for f in sorted(FILES):
-        print(f"=== Processant: {os.path.basename(f)} ===")
         process_file(f)
+    print(f"Fitxers processats. Podeu trobar els resultats a la carpeta '{OUTPUT_DIR}' (s'han creat pestanyes noves amb les dades demanades).")

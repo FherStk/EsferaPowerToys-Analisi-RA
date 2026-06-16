@@ -2,7 +2,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import shutil, glob, os
+import shutil, glob, os, re
 
 INPUT_DIR = "input/"
 OUTPUT_DIR = "output/"
@@ -11,6 +11,49 @@ STATS_SHEET_NAME = "Estadístiques grup (MP)"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 FILES = glob.glob(os.path.join(INPUT_DIR, "*.xlsx"))
+
+def parse_filename(filepath):
+    m = re.search(r'_av_(\d+)_\d{4}-\d{2}-\d{2}_(.+)\.xlsx$', os.path.basename(filepath))
+    if m:
+        return int(m.group(1)), m.group(2)
+    return None, None
+
+def merge_av_data(df_prev, df_curr):
+    id_col = df_curr.columns[0]
+    nom_col = df_curr.columns[1]
+    ra_prev = {c for c in df_prev.columns if str(c).endswith("RA")}
+    ra_curr = {c for c in df_curr.columns if str(c).endswith("RA")}
+    common_ra = ra_prev & ra_curr
+
+    prev_by_id = df_prev.set_index(df_prev.columns[0])
+
+    for idx, row in df_curr.iterrows():
+        student_id = row[id_col]
+        if student_id not in prev_by_id.index:
+            continue
+        prev_row = prev_by_id.loc[student_id]
+        for col in common_ra:
+            if not is_evaluated(row[col]) and is_evaluated(prev_row[col]):
+                val = prev_row[col]
+                if isinstance(val, str) and df_curr[col].dtype != object:
+                    df_curr[col] = df_curr[col].astype(object)
+                df_curr.at[idx, col] = val
+
+    curr_ids = set(df_curr[id_col])
+    missing = df_prev[~df_prev[df_prev.columns[0]].isin(curr_ids)]
+    if not missing.empty:
+        new_rows = []
+        for _, student in missing.iterrows():
+            new_row = {col: pd.NA for col in df_curr.columns}
+            new_row[id_col] = student[df_prev.columns[0]]
+            new_row[nom_col] = student[df_prev.columns[1]]
+            for col in common_ra:
+                if is_evaluated(student[col]):
+                    new_row[col] = student[col]
+            new_rows.append(new_row)
+        df_curr = pd.concat([df_curr, pd.DataFrame(new_rows, columns=df_curr.columns)], ignore_index=True)
+
+    return df_curr
 
 def is_evaluated(val):
     """Avaluat = número o 'NA' (suspès). PDT i buit = no avaluat."""
@@ -103,8 +146,9 @@ def write_stats_sheet(wb, mp_stats):
         cell.border = border
 
 
-def process_file(filepath):
-    df = pd.read_excel(filepath, header=1, keep_default_na=False, na_values=[""])
+def process_file(filepath, df=None):
+    if df is None:
+        df = pd.read_excel(filepath, header=1, keep_default_na=False, na_values=[""])
     ra_cols = [c for c in df.columns if str(c).endswith("RA")]
 
     results = []
@@ -164,12 +208,25 @@ def process_file(filepath):
 
 print("""
 EsferaPowerToys-Analisi-RA
-v1.1.0
+v1.2.0
 """)
 
 if not FILES:
     print(f"No s'han trobat fitxers .xlsx a '{INPUT_DIR}'")
 else:
+    av2_map = {}
+    for f in FILES:
+        av_num, class_name = parse_filename(f)
+        if av_num == 2 and class_name:
+            av2_map[class_name] = f
+
     for f in sorted(FILES):
-        process_file(f)
+        av_num, class_name = parse_filename(f)
+        if av_num == 3 and class_name in av2_map:
+            df_prev = pd.read_excel(av2_map[class_name], header=1, keep_default_na=False, na_values=[""])
+            df_curr = pd.read_excel(f, header=1, keep_default_na=False, na_values=[""])
+            df_merged = merge_av_data(df_prev, df_curr)
+            process_file(f, df=df_merged)
+        else:
+            process_file(f)
     print(f"Fitxers processats. Podeu trobar els resultats a la carpeta '{OUTPUT_DIR}' (s'han creat pestanyes noves amb les dades demanades).")
